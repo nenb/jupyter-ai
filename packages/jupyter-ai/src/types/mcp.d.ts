@@ -33,6 +33,25 @@ export interface IMcpCommand {
 }
 
 /**
+ * MCP Command Argument information
+ */
+export interface IMcpCommandArgument {
+  id: string;
+  description: string;
+  required?: boolean;
+  type?: string;
+}
+
+/**
+ * Parameters for MCP command execution
+ */
+export interface IMcpExecuteParams {
+  serverName: string;
+  command?: string;
+  args?: string;
+}
+
+/**
  * MCP Tool information
  */
 export interface IMcpTool {

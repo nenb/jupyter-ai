@@ -34,7 +34,29 @@ except ImportError:
     class Resource:
         pass
 
-logger = logging.getLogger(__name__)
+import sys
+
+# Setup a more explicit logger
+logger = logging.getLogger("jupyter_ai.mcp")
+logger.setLevel(logging.DEBUG)
+
+# Configure a file handler for debugging
+debug_log_path = "/tmp/jupyter_mcp_debug.log"
+file_handler = logging.FileHandler(debug_log_path, mode='a')
+file_handler.setLevel(logging.DEBUG)
+file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(file_formatter)
+logger.addHandler(file_handler)
+
+# Also add a stream handler to console
+console_handler = logging.StreamHandler(stream=sys.stdout)
+console_handler.setLevel(logging.DEBUG)
+console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
+
+# Log to let us know the logger is active
+logger.info(f"MCP Registry logger initialized. Debug log at {debug_log_path}")
 
 class McpServerInfo(BaseModel):
     """Information about an MCP server"""
@@ -61,17 +83,31 @@ class McpRegistry:
         self._initialized = False
         
     async def initialize(self):
-        """Initialize the registry and discover servers"""
+        """Initialize the registry and discover servers"""           
         if self._initialized:
+            logger.info("MCP registry already initialized, skipping")
             return
+        
+        logger.debug(f"HAS_MCP = {HAS_MCP}")
         
         if not HAS_MCP:
             logger.warning("MCP Python SDK not installed. MCP functionality will be disabled.")
             self._initialized = True
             return
 
-        # Load server configuration
-        await self._discover_servers()
+        logger.info("Initializing MCP registry")
+        try:
+            # Load server configuration
+            await self._discover_servers()
+            logger.info(f"MCP registry initialized with {len(self._servers)} servers")
+            for server_id, server in self._servers.items():
+                logger.info(f"  - {server.name} (ID: {server_id})")
+        except Exception as e:
+            logger.error(f"Error initializing MCP registry: {e}")
+            # Still mark as initialized to avoid repeated attempts
+            self._initialized = True
+            return
+            
         self._initialized = True
     
     async def _discover_servers(self):
@@ -80,16 +116,75 @@ class McpRegistry:
         
         # Check environment variables for MCP servers
         env_servers = os.environ.get("JUPYTER_MCP_SERVERS", "")
+        logger.debug(f"MCP servers from environment: {env_servers}")
         if env_servers:
+            # Split by comma while respecting paths that may contain colons
             for server_spec in env_servers.split(","):
-                parts = server_spec.strip().split(":")
-                if len(parts) >= 2:
-                    command, *args = parts
-                    servers_to_discover.append({
-                        "connection_type": "stdio",
-                        "command": command,
-                        "args": args
-                    })
+                server_spec = server_spec.strip()
+                logger.debug(f"Processing server spec: {server_spec}")
+                
+                # Handle the special format python:script.py for interpreter + script
+                if ':' in server_spec:
+                    first_part = server_spec.split(':', 1)[0]
+                    if os.path.exists(first_part) and os.path.isfile(first_part):
+                        logger.debug(f"Detected interpreter path: {first_part}")
+                        # This is a Python interpreter followed by a script
+                        parts = server_spec.split(':', 1)
+                        interpreter = parts[0]
+                        
+                        if len(parts) > 1 and parts[1]:
+                            # Get the script path and any arguments
+                            script_parts = parts[1].strip().split()
+                            script = script_parts[0]
+                            script_args = script_parts[1:] if len(script_parts) > 1 else []
+                            
+                            logger.debug(f"Starting MCP server with: {interpreter} {script} {script_args}")
+                            servers_to_discover.append({
+                                "connection_type": "stdio",
+                                "command": interpreter,
+                                "args": [script] + script_args
+                            })
+                        else:
+                            # Just an interpreter without a script
+                            servers_to_discover.append({
+                                "connection_type": "stdio",
+                                "command": interpreter,
+                                "args": []
+                            })
+                    elif server_spec.startswith("http:") or server_spec.startswith("https:"):
+                        # This is an HTTP/HTTPS endpoint for SSE
+                        logger.debug(f"Detected SSE endpoint: {server_spec}")
+                        servers_to_discover.append({
+                            "connection_type": "sse",
+                            "endpoint": server_spec
+                        })
+                    else:
+                        # Fall back to original behavior for non-file paths
+                        parts = server_spec.split(":")
+                        if len(parts) >= 2:
+                            command, *args = parts
+                            logger.debug(f"Using command format: {command} with args {args}")
+                            servers_to_discover.append({
+                                "connection_type": "stdio",
+                                "command": command,
+                                "args": args
+                            })
+                else:
+                    # No colon - treat as a simple command or path
+                    if os.path.exists(server_spec) and os.path.isfile(server_spec):
+                        logger.debug(f"Detected executable path: {server_spec}")
+                        servers_to_discover.append({
+                            "connection_type": "stdio",
+                            "command": server_spec,
+                            "args": []
+                        })
+                    else:
+                        logger.debug(f"Using as command name: {server_spec}")
+                        servers_to_discover.append({
+                            "connection_type": "stdio",
+                            "command": server_spec,
+                            "args": []
+                        })
         
         # Check for local MCP servers in common locations
         local_paths = [
@@ -109,7 +204,8 @@ class McpRegistry:
                             "command": str(file),
                             "args": []
                         })
-        
+
+        logger.debug(f"MCP servers to discover: {servers_to_discover}")
         # Connect to servers and gather info
         for server_info in servers_to_discover:
             try:
@@ -118,8 +214,9 @@ class McpRegistry:
                     command=server_info["command"],
                     args=server_info["args"]
                 )
+                logger.info(f"Successfully registered MCP server: {server_info['command']}")
             except Exception as e:
-                logger.warning(f"Failed to register MCP server {server_info['command']}: {e}")
+                logger.error(f"Failed to register MCP server {server_info['command']}: {e}", exc_info=True)
     
     async def register_server(self, connection_type: str, command: str = None, 
                               args: List[str] = None, endpoint: str = None) -> Optional[str]:
@@ -141,26 +238,71 @@ class McpRegistry:
                     command=command,
                     args=args or []
                 )
-                transport = await stdio_client(server_params)
+                logger.info(f"Connecting to MCP server with command: {command} {' '.join(args or [])}")
+                logger.debug(f"Server parameters: {server_params}")
+                
+                # Handle async context manager correctly
+                context_manager = stdio_client(server_params)
+                logger.debug("Created stdio client context manager")
+                
+                try:
+                    transport = await context_manager.__aenter__()
+                    logger.debug("Entered stdio client context")
+                except Exception as e:
+                    logger.error(f"Failed to enter stdio client context: {e}")
+                    raise
             elif connection_type == "sse":
                 if not endpoint:
                     raise ValueError("Endpoint is required for SSE connection")
                 
-                transport = await sse_client(endpoint)
+                logger.info(f"Connecting to MCP server with SSE endpoint: {endpoint}")
+                
+                # Handle async context manager correctly
+                context_manager = sse_client(endpoint)
+                logger.debug("Created SSE client context manager")
+                
+                try:
+                    transport = await context_manager.__aenter__()
+                    logger.debug("Entered SSE client context")
+                except Exception as e:
+                    logger.error(f"Failed to enter SSE client context: {e}")
+                    raise
             else:
                 raise ValueError(f"Unsupported connection type: {connection_type}")
             
             # Create session
-            session = ClientSession(*transport)
+            logger.debug("Creating client session")
+            from datetime import timedelta
+            seconds = timedelta(seconds=5)
+            session = ClientSession(*transport, read_timeout_seconds=seconds)
             
-            # Initialize the session
-            init_result = await session.initialize()
-            
-            # Generate a unique ID for this server
-            server_name = init_result.serverInfo.name
-            server_id = f"{server_name}-{id(session)}"
+            # Initialize the session with a timeout
+            logger.debug("Initializing session with timeout")
+            try:
+                # Import asyncio for timeout functionality
+                import asyncio
+                
+                # Set a timeout of 5 seconds for initialization
+                init_task = asyncio.create_task(session.initialize())
+                init_result = await asyncio.wait_for(init_task, timeout=5.0)
+                
+                # Generate a unique ID for this server
+                server_name = init_result.serverInfo.name
+                server_id = f"{server_name}-{id(session)}"
+                
+                logger.debug(f"Successfully initialized session for server {server_name}")
+            except asyncio.TimeoutError:
+                logger.error("Timeout while initializing MCP session")
+                # Clean up if needed
+                if 'context_manager' in locals() and hasattr(context_manager, '__aexit__'):
+                    try:
+                        await context_manager.__aexit__(None, None, None)
+                    except Exception as exit_error:
+                        logger.error(f"Error cleaning up MCP transport after timeout: {exit_error}")
+                raise TimeoutError("MCP server initialization timed out")
             
             # Register the server
+            logger.debug("Register server")
             server_info = McpServerInfo(
                 id=server_id,
                 name=server_name,
@@ -182,6 +324,7 @@ class McpRegistry:
             self._servers[server_id] = server_info
             
             # Fetch tools and prompts
+            logger.debug("Fetching capabilites")
             await self._fetch_server_capabilities(server_id)
             
             logger.info(f"Registered MCP server: {server_name}")
@@ -191,8 +334,11 @@ class McpRegistry:
             logger.error(f"Error registering MCP server: {e}")
             
             # Clean up if needed
-            if transport and hasattr(transport, "close"):
-                await transport.close()
+            if 'context_manager' in locals() and hasattr(context_manager, '__aexit__'):
+                try:
+                    await context_manager.__aexit__(type(e), e, e.__traceback__)
+                except Exception as exit_error:
+                    logger.error(f"Error cleaning up MCP transport: {exit_error}")
             
             return None
     
@@ -300,26 +446,35 @@ class McpRegistry:
         
         return session
     
-    async def execute_command(self, server_name: str, command: str = "", arguments: str = "") -> Dict[str, Any]:
-        """Execute a command on an MCP server"""
+    async def execute_command(self, server_name: str, command: str = "", arguments: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Execute a command on an MCP server with optional arguments"""
         if not HAS_MCP:
             return {
                 "type": "text",
                 "content": "Error: MCP support is not available. Please install the MCP Python SDK."
             }
             
+        logger.debug(f"Executing MCP command: server={server_name}, command={command}, arguments={arguments}")
+        
+        # If no arguments provided, initialize an empty dict
+        if arguments is None:
+            arguments = {}
+            
         server = self.get_server_by_name(server_name)
         if not server:
+            available_servers = [s.name for s in self.get_servers()]
+            servers_list = ", ".join(available_servers) if available_servers else "None"
             return {
                 "type": "text",
-                "content": f"Error: MCP server '{server_name}' not found or not available."
+                "content": f"Error: MCP server '{server_name}' not found or not available.\n\nAvailable servers: {servers_list}"
             }
         
+        # Get session with retry on failure
         session = await self.get_session(server.id)
         if not session:
             return {
                 "type": "text",
-                "content": f"Error: Failed to connect to MCP server '{server_name}'."
+                "content": f"Error: Failed to connect to MCP server '{server_name}'. The server may be unavailable."
             }
         
         try:
@@ -329,10 +484,10 @@ class McpRegistry:
                 if server.capabilities.get("prompts"):
                     for prompt in server.prompts:
                         if prompt["name"] == command:
-                            # Get prompt
+                            # Get prompt with provided arguments or default
                             prompt_result = await session.get_prompt(
                                 command, 
-                                arguments={} if not arguments else {"input": arguments}
+                                arguments=arguments or {"input": ""}
                             )
                             
                             # Format prompt result
@@ -350,10 +505,10 @@ class McpRegistry:
                 if server.capabilities.get("tools"):
                     for tool in server.tools:
                         if tool["name"] == command:
-                            # Call tool
+                            # Call tool with provided arguments or default
                             tool_result = await session.call_tool(
                                 command, 
-                                arguments={} if not arguments else {"input": arguments}
+                                arguments=arguments or {"input": ""}
                             )
                             
                             # Format tool result
@@ -382,7 +537,7 @@ class McpRegistry:
                 try:
                     prompt_result = await session.get_prompt(
                         server_name, 
-                        arguments={} if not arguments else {"input": arguments}
+                        arguments=arguments or {"input": ""}
                     )
                     
                     # Format prompt result
@@ -404,7 +559,7 @@ class McpRegistry:
                 try:
                     tool_result = await session.call_tool(
                         server_name, 
-                        arguments={} if not arguments else {"input": arguments}
+                        arguments=arguments or {"input": ""}
                     )
                     
                     # Format tool result
@@ -463,7 +618,12 @@ class McpRegistry:
             
         for server_id, session in self._sessions.items():
             try:
-                await session.aclose()
+                if hasattr(session, 'aclose'):
+                    await session.aclose()
+                elif hasattr(session, 'close'):
+                    await session.close()
+                elif hasattr(session, '__aexit__'):
+                    await session.__aexit__(None, None, None)
             except Exception as e:
                 logger.warning(f"Error closing MCP session for {server_id}: {e}")
         

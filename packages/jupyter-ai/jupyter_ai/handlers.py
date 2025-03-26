@@ -1,5 +1,18 @@
 from typing import TYPE_CHECKING, Dict, List, Optional, Type, cast
 import json
+import logging
+
+# Set up logger
+logger = logging.getLogger("jupyter_ai")
+
+# Check for MCP support
+try:
+    from mcp import __version__ as mcp_version
+    HAS_MCP = True
+    logger.info(f"MCP SDK found. Version: {mcp_version}")
+except ImportError:
+    HAS_MCP = False
+    logger.warning("MCP SDK not found. MCP functionality will be disabled.")
 
 from jupyter_ai.chat_handlers import (
     AskChatHandler,
@@ -8,12 +21,18 @@ from jupyter_ai.chat_handlers import (
     HelpChatHandler,
     LearnChatHandler,
     SlashCommandRoutingType,
-    HAS_MCP,
 )
 
 if HAS_MCP:
-    from jupyter_ai.mcp.chat_handler import McpChatHandler, McpServerChatHandler
-    from jupyter_ai.mcp.registry import mcp_registry
+    try:
+        from jupyter_ai.mcp.chat_handler import McpChatHandler, McpServerChatHandler
+        from jupyter_ai.mcp.registry import mcp_registry
+        logger.info("MCP chat handlers and registry imported successfully")
+    except ImportError as e:
+        # If we encounter an error importing our MCP modules despite the SDK being present,
+        # log the error but allow the extension to continue
+        logger.error(f"Error importing MCP modules: {e}")
+        HAS_MCP = False
 from jupyter_ai.config_manager import ConfigManager, KeyEmptyError, WriteConflictError
 from jupyter_ai.context_providers import BaseCommandContextProvider, ContextCommand
 from jupyter_server.base.handlers import APIHandler as BaseAPIHandler
@@ -52,7 +71,13 @@ CHAT_HANDLER_DICT = {
 
 # Add MCP handlers if available
 if HAS_MCP:
-    CHAT_HANDLER_DICT["/mcp"] = McpChatHandler
+    try:
+        from jupyter_ai.mcp.chat_handler import McpChatHandler
+        CHAT_HANDLER_DICT["/mcp"] = McpChatHandler
+        logger.info("Added MCP chat handler to handler dictionary")
+    except ImportError as e:
+        logger.error(f"Failed to import McpChatHandler: {e}")
+        # Don't set HAS_MCP to False here as we still want to try to load other MCP features
 
 
 class ProviderHandler(BaseAPIHandler):
@@ -275,6 +300,84 @@ if HAS_MCP:
                         })
             
             self.write(json.dumps(commands))
+            
+            
+    class McpCommandArgumentsHandler(BaseAPIHandler):
+        """Handler for MCP command argument suggestions"""
+        
+        @web.authenticated
+        async def get(self):
+            """Get argument suggestions for MCP commands"""
+            # Initialize registry if needed
+            if not mcp_registry._initialized:
+                await mcp_registry.initialize()
+            
+            command = self.get_query_argument("command", None)
+            if not command:
+                self.write(json.dumps([]))
+                return
+                
+            # Parse command to extract server and subcommand
+            parts = command.split(' ', 1)
+            server_name = parts[0]
+            if server_name.startswith('/'):
+                server_name = server_name[1:]
+                
+            subcommand = parts[1] if len(parts) > 1 else ""
+            
+            # Get server and argument options
+            server = mcp_registry.get_server_by_name(server_name)
+            if not server:
+                self.write(json.dumps([]))
+                return
+                
+            # Find matching prompt or tool
+            options = []
+            
+            # If we have a subcommand, look for its parameters
+            if subcommand:
+                if server.capabilities.get("prompts"):
+                    for prompt in server.prompts:
+                        if prompt["name"] == subcommand:
+                            for arg in prompt.get("arguments", []):
+                                options.append({
+                                    "id": arg["name"],
+                                    "description": arg["description"] or f"Argument for {subcommand}",
+                                    "required": arg.get("required", False)
+                                })
+                            break
+                                
+                if server.capabilities.get("tools") and not options:
+                    for tool in server.tools:
+                        if tool["name"] == subcommand:
+                            schema = tool.get("inputSchema", {})
+                            if schema and isinstance(schema, dict):
+                                for prop_name, prop in schema.get("properties", {}).items():
+                                    options.append({
+                                        "id": prop_name,
+                                        "description": prop.get("description", f"Parameter for {subcommand}"),
+                                        "required": prop_name in schema.get("required", [])
+                                    })
+                            break
+            # If no subcommand, suggest available tools and prompts
+            else:
+                if server.capabilities.get("prompts"):
+                    for prompt in server.prompts:
+                        options.append({
+                            "id": prompt["name"],
+                            "description": prompt["description"] or f"Prompt from {server.name}",
+                            "type": "prompt"
+                        })
+                
+                if server.capabilities.get("tools"):
+                    for tool in server.tools:
+                        options.append({
+                            "id": tool["name"],
+                            "description": tool["description"] or f"Tool from {server.name}",
+                            "type": "tool"
+                        })
+            
+            self.write(json.dumps(options))
 
 
     class McpExecuteHandler(BaseAPIHandler):
@@ -290,9 +393,17 @@ if HAS_MCP:
             data = self.get_json_body()
             server_name = data.get("serverName", "")
             command = data.get("command", "")
-            args = data.get("args", "")
             
-            result = await mcp_registry.execute_command(server_name, command, args)
+            # Execute with appropriate arguments based on presence of command
+            if command:
+                result = await mcp_registry.execute_command(
+                    server_name=server_name,
+                    command=command
+                )
+            else:
+                result = await mcp_registry.execute_command(
+                    server_name=server_name
+                )
             self.write(json.dumps(result))
 
 

@@ -114,3 +114,4 @@ export default [
 
 export * from './contexts';
 export * from './tokens';
+export { hasMcpResult, extractMcpResult, renderMcpResult } from './components/mcp-result';

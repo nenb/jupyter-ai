@@ -14,6 +14,13 @@ from jupyter_ai_magics.providers import *
 from ._version import __version__
 from .extension import AiExtension
 
+# Check for MCP support
+try:
+    import mcp
+    HAS_MCP = True
+except ImportError:
+    HAS_MCP = False
+
 
 def _jupyter_labextension_paths():
     return [{"src": "labextension", "dest": "@jupyter-ai/core"}]

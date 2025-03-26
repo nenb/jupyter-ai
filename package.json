@@ -35,7 +35,8 @@
     "lint": "jlpm && lerna run prettier && lerna run eslint",
     "lint:check": "lerna run prettier:check && lerna run eslint:check",
     "watch": "lerna run watch --parallel --stream",
-    "test": "lerna run test"
+    "test": "lerna run test",
+    "serve:mcp": "mcp-server serve"
   },
   "devDependencies": {
     "lerna": "^6.4.1",

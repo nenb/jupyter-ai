@@ -13,7 +13,7 @@ import AutoFixNormal from '@mui/icons-material/AutoFixNormal';
 import Terminal from '@mui/icons-material/Terminal';
 import { Box, Typography } from '@mui/material';
 import React from 'react';
-import { AiService } from './handler';
+import { AiService, checkMcpAvailability } from './handler';
 import { mcpService } from './services/mcp-service';
 
 type SlashCommandOption = AutocompleteCommand & {
@@ -89,22 +89,44 @@ export const autocompletion: IAutocompletionCommandsProps = {
       description: slashCommand.description
     }));
     
-    // Add MCP server commands
+    // Add MCP server commands if available
     try {
-      const mcpCommands = await mcpService.getCommands();
-      const mcpSlashCommands = mcpCommands.map<SlashCommandOption>(mcpCommand => ({
-        id: mcpCommand.serverName,
-        label: '/' + mcpCommand.serverName + ' ',
-        description: mcpCommand.description || `MCP Server: ${mcpCommand.serverName}`
-      }));
+      // First check if MCP is available
+      const checkMcpAvailable = await checkMcpAvailability();
       
-      return [...standardCommands, ...mcpSlashCommands];
+      if (checkMcpAvailable) {
+        console.log('MCP available, fetching commands for autocompletion...');
+        const mcpCommands = await mcpService.getCommands();
+        console.log('MCP commands fetched successfully:', mcpCommands);
+        
+        const mcpSlashCommands = mcpCommands.map<SlashCommandOption>(mcpCommand => ({
+          id: mcpCommand.serverName,
+          label: '/' + mcpCommand.serverName + ' ',
+          description: mcpCommand.description || `MCP Server: ${mcpCommand.serverName}`
+        }));
+        
+        return [...standardCommands, ...mcpSlashCommands];
+      } else {
+        console.log('MCP not available, skipping MCP commands in autocompletion');
+        return standardCommands;
+      }
     } catch (error) {
-      console.error('Error fetching MCP commands:', error);
+      // Log the error but don't block autocompletion
+      console.error('Error fetching MCP commands for autocompletion:', error);
       return standardCommands;
     }
   },
   props: {
-    renderOption: renderSlashCommandOption
+    renderOption: renderSlashCommandOption,
+    // Add custom handler for argument suggestions
+    getOptionLabel: (option: any) => option.label || '',
+    onChange: async (_event: any, _value: any, _reason: any) => {
+      try {
+        // Custom argument handling will be implemented in the component
+        return;
+      } catch (error) {
+        console.error('Error handling MCP command arguments:', error);
+      }
+    }
   }
 };

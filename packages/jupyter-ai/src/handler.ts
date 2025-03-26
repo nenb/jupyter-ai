@@ -59,13 +59,23 @@ export async function checkMcpAvailability(): Promise<boolean> {
   try {
     // Try to access the MCP servers endpoint
     await requestAPI('mcp/servers');
+    console.log('MCP is available - endpoint responded successfully');
     _hasMcp = true;
     return true;
   } catch (error) {
     // If we get a 404, MCP is not available
     if (error instanceof ServerConnection.ResponseError && error.response.status === 404) {
+      console.warn('MCP is not available - endpoint returned 404');
       _hasMcp = false;
       return false;
+    }
+    
+    // For server connection errors, MCP might be initializing
+    if (error instanceof ServerConnection.NetworkError) {
+      console.warn('MCP availability check had a network error - may be initializing', error);
+      // Set to true and let the UI handle any issues
+      _hasMcp = true;
+      return true;
     }
     
     // For any other error, consider MCP available but with an issue

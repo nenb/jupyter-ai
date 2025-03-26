@@ -13,7 +13,6 @@ import {
   ListItem, 
   ListItemText,
   Chip,
-  Divider,
   Paper
 } from '@mui/material';
 import { IMcpServer } from '../../types/mcp';
@@ -26,23 +25,50 @@ export const McpSettings: React.FC = () => {
   const [servers, setServers] = useState<IMcpServer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   
   useEffect(() => {
+    // Add a delay for the first load to allow the backend to initialize
+    const initialDelay = retryCount === 0 ? 1000 : 0;
+    
     const fetchServers = async () => {
       try {
-        setIsLoading(true);
+        if (retryCount === 0) {
+          setIsLoading(true);
+        }
         setError(null);
+        
+        console.log('Fetching MCP servers...');
         const serverList = await mcpService.getServers();
+        console.log('MCP servers fetched successfully:', serverList);
         setServers(serverList);
       } catch (err) {
         console.error('Error fetching MCP servers:', err);
-        setError('Failed to load MCP servers');
+        
+        // If we've tried less than 3 times, retry after a delay
+        if (retryCount < 3) {
+          setRetryCount(prev => prev + 1);
+          setTimeout(() => {
+            fetchServers();
+          }, 2000); // Retry after 2 seconds
+          
+          setError('Loading MCP servers, please wait...');
+        } else {
+          setError(
+            'Failed to load MCP servers. Make sure MCP servers are properly configured and restart JupyterLab if needed.'
+          );
+        }
       } finally {
         setIsLoading(false);
       }
     };
     
-    fetchServers();
+    // Add initial delay to allow backend initialization
+    const timer = setTimeout(() => {
+      fetchServers();
+    }, initialDelay);
+    
+    return () => clearTimeout(timer);
   }, []);
   
   return (
