@@ -31,7 +31,12 @@ from .handlers import (
     GlobalConfigHandler,
     ModelProviderHandler,
     SlashCommandsInfoHandler,
+    HAS_MCP,
 )
+
+if HAS_MCP:
+    from .handlers import McpServersHandler, McpCommandsHandler, McpExecuteHandler
+    from .mcp.registry import mcp_registry
 from .history import YChatHistory
 
 from jupyter_collaboration import (  # type:ignore[import-untyped]  # isort:skip
@@ -86,6 +91,14 @@ class AiExtension(ExtensionApp):
             {"path": JUPYTERNAUT_AVATAR_PATH},
         ),
     ]
+    
+    # Add MCP handlers if available
+    if HAS_MCP:
+        handlers.extend([
+            (r"api/ai/mcp/servers/?", McpServersHandler),
+            (r"api/ai/mcp/commands/?", McpCommandsHandler),
+            (r"api/ai/mcp/execute/?", McpExecuteHandler),
+        ])
 
     allowed_providers = List(
         Unicode(),
@@ -233,6 +246,12 @@ class AiExtension(ExtensionApp):
         self.event_logger.add_listener(
             schema_id=JUPYTER_COLLABORATION_EVENTS_URI, listener=self.connect_chat
         )
+        
+        # Initialize MCP registry if available
+        if HAS_MCP:
+            self.log.info("Initializing MCP registry")
+            # We cannot await directly here, so schedule it as a task
+            self.serverapp.io_loop.asyncio_loop.create_task(mcp_registry.initialize())
 
     async def connect_chat(
         self, logger: EventLogger, schema_id: str, data: dict
@@ -321,11 +340,40 @@ class AiExtension(ExtensionApp):
             and maybe_command in chat_handlers.keys()
             and maybe_command != "default"
         )
-        command = maybe_command if is_command else "default"
+        
+        # Check for MCP server commands
+        is_mcp_command = False
+        if HAS_MCP and message.body.startswith("/") and not is_command:
+            # Strip the leading slash
+            server_name = maybe_command[1:]
+            # Check if this matches an MCP server
+            server = mcp_registry.get_server_by_name(server_name)
+            if server:
+                is_mcp_command = True
+                is_command = True
+                # We'll handle MCP commands differently
+                command = maybe_command
+        else:
+            command = maybe_command if is_command else "default"
 
         start = time.time()
         if is_command:
-            await chat_handlers[command].on_message(message)
+            if is_mcp_command:
+                # Get the MCP server handler
+                mcp_handler = None
+                for handler in chat_handlers.values():
+                    if isinstance(handler, McpServerChatHandler):
+                        mcp_handler = handler
+                        break
+                
+                if mcp_handler:
+                    await mcp_handler.on_message(message)
+                else:
+                    # Fallback if no MCP handler found
+                    self.log.warning("MCP handler not found, falling back to default")
+                    await default.on_message(message)
+            else:
+                await chat_handlers[command].on_message(message)
         else:
             await default.on_message(message)
 
@@ -441,6 +489,12 @@ class AiExtension(ExtensionApp):
             self.log.info("Closing Dask client.")
             await dask_client.close()
             self.log.debug("Closed Dask client.")
+            
+        # Shutdown MCP registry if available
+        if HAS_MCP:
+            self.log.info("Shutting down MCP registry")
+            await mcp_registry.shutdown()
+            self.log.debug("Shut down MCP registry")
 
     def _init_chat_handlers(self, ychat: YChat) -> Dict[str, BaseChatHandler]:
         """
@@ -540,6 +594,21 @@ class AiExtension(ExtensionApp):
             self.log.info(
                 f"Registered chat handler `{chat_handler.id}` with command `{command_name}`."
             )
+            
+        # Add MCP server chat handlers if available
+        if HAS_MCP:
+            from .mcp.chat_handler import McpServerChatHandler
+            
+            # Register default MCP handler (for direct server access)
+            mcp_server_handler = McpServerChatHandler(**chat_handler_kwargs)
+            chat_handlers["mcp_server"] = mcp_server_handler
+            
+            # Initialize MCP registry for server discovery
+            if not mcp_registry._initialized:
+                self.serverapp.io_loop.asyncio_loop.create_task(mcp_registry.initialize())
+                
+            # We will dynamically route server commands to this handler
+            self.log.info("Registered MCP server handler for dynamic routing")
 
         return chat_handlers
 

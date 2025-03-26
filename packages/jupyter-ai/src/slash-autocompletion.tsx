@@ -10,9 +10,11 @@ import MenuBook from '@mui/icons-material/MenuBook';
 import School from '@mui/icons-material/School';
 import HideSource from '@mui/icons-material/HideSource';
 import AutoFixNormal from '@mui/icons-material/AutoFixNormal';
+import Terminal from '@mui/icons-material/Terminal';
 import { Box, Typography } from '@mui/material';
 import React from 'react';
 import { AiService } from './handler';
+import { mcpService } from './services/mcp-service';
 
 type SlashCommandOption = AutocompleteCommand & {
   id: string;
@@ -34,6 +36,7 @@ const DEFAULT_SLASH_COMMAND_ICONS: Record<string, JSX.Element> = {
   generate: <MenuBook />,
   help: <Help />,
   learn: <School />,
+  mcp: <Terminal />,
   unknown: <MoreHoriz />
 };
 
@@ -78,12 +81,28 @@ function renderSlashCommandOption(
 export const autocompletion: IAutocompletionCommandsProps = {
   opener: '/',
   commands: async () => {
+    // Get standard slash commands
     const slashCommands = (await AiService.listSlashCommands()).slash_commands;
-    return slashCommands.map<SlashCommandOption>(slashCommand => ({
+    const standardCommands = slashCommands.map<SlashCommandOption>(slashCommand => ({
       id: slashCommand.slash_id,
       label: '/' + slashCommand.slash_id + ' ',
       description: slashCommand.description
     }));
+    
+    // Add MCP server commands
+    try {
+      const mcpCommands = await mcpService.getCommands();
+      const mcpSlashCommands = mcpCommands.map<SlashCommandOption>(mcpCommand => ({
+        id: mcpCommand.serverName,
+        label: '/' + mcpCommand.serverName + ' ',
+        description: mcpCommand.description || `MCP Server: ${mcpCommand.serverName}`
+      }));
+      
+      return [...standardCommands, ...mcpSlashCommands];
+    } catch (error) {
+      console.error('Error fetching MCP commands:', error);
+      return standardCommands;
+    }
   },
   props: {
     renderOption: renderSlashCommandOption

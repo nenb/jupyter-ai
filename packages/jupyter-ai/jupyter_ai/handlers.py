@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING, Dict, List, Optional, Type, cast
+import json
 
 from jupyter_ai.chat_handlers import (
     AskChatHandler,
@@ -7,7 +8,12 @@ from jupyter_ai.chat_handlers import (
     HelpChatHandler,
     LearnChatHandler,
     SlashCommandRoutingType,
+    HAS_MCP,
 )
+
+if HAS_MCP:
+    from jupyter_ai.mcp.chat_handler import McpChatHandler, McpServerChatHandler
+    from jupyter_ai.mcp.registry import mcp_registry
 from jupyter_ai.config_manager import ConfigManager, KeyEmptyError, WriteConflictError
 from jupyter_ai.context_providers import BaseCommandContextProvider, ContextCommand
 from jupyter_server.base.handlers import APIHandler as BaseAPIHandler
@@ -25,6 +31,8 @@ from .models import (
     UpdateConfigRequest,
 )
 
+from tornado.web import url as url_path_join
+
 if TYPE_CHECKING:
     from jupyter_ai_magics.embedding_providers import BaseEmbeddingsProvider
     from jupyter_ai_magics.providers import BaseProvider
@@ -41,6 +49,10 @@ CHAT_HANDLER_DICT = {
     "/generate": GenerateChatHandler,
     "/help": HelpChatHandler,
 }
+
+# Add MCP handlers if available
+if HAS_MCP:
+    CHAT_HANDLER_DICT["/mcp"] = McpChatHandler
 
 
 class ProviderHandler(BaseAPIHandler):
@@ -202,6 +214,86 @@ class ApiKeysHandler(BaseAPIHandler):
             self.config_manager.delete_api_key(api_key_name)
         except Exception as e:
             raise HTTPError(500, str(e))
+
+
+# MCP Handlers
+if HAS_MCP:
+    class McpServersHandler(BaseAPIHandler):
+        """Handler for MCP server information"""
+        
+        @web.authenticated
+        async def get(self):
+            """Get all registered MCP servers"""
+            # Initialize registry if needed
+            if not mcp_registry._initialized:
+                await mcp_registry.initialize()
+            
+            servers = mcp_registry.get_servers()
+            self.write(json.dumps([server.dict() for server in servers]))
+
+
+    class McpCommandsHandler(BaseAPIHandler):
+        """Handler for available MCP commands"""
+        
+        @web.authenticated
+        async def get(self):
+            """Get all available MCP commands"""
+            # Initialize registry if needed
+            if not mcp_registry._initialized:
+                await mcp_registry.initialize()
+            
+            servers = mcp_registry.get_servers()
+            commands = []
+            
+            for server in servers:
+                commands.append({
+                    "serverName": server.name,
+                    "commandName": server.name,  # Use server name as command for MVP
+                    "description": server.description,
+                    "serverStatus": server.status
+                })
+                
+                # Also include specific commands from the server
+                if server.capabilities.get("prompts"):
+                    for prompt in server.prompts:
+                        commands.append({
+                            "serverName": server.name,
+                            "commandName": prompt["name"],
+                            "description": prompt["description"] or f"Prompt from {server.name}",
+                            "serverStatus": server.status,
+                            "type": "prompt"
+                        })
+                
+                if server.capabilities.get("tools"):
+                    for tool in server.tools:
+                        commands.append({
+                            "serverName": server.name,
+                            "commandName": tool["name"],
+                            "description": tool["description"] or f"Tool from {server.name}",
+                            "serverStatus": server.status,
+                            "type": "tool"
+                        })
+            
+            self.write(json.dumps(commands))
+
+
+    class McpExecuteHandler(BaseAPIHandler):
+        """Handler for executing MCP commands"""
+        
+        @web.authenticated
+        async def post(self):
+            """Execute an MCP command"""
+            # Initialize registry if needed
+            if not mcp_registry._initialized:
+                await mcp_registry.initialize()
+            
+            data = self.get_json_body()
+            server_name = data.get("serverName", "")
+            command = data.get("command", "")
+            args = data.get("args", "")
+            
+            result = await mcp_registry.execute_command(server_name, command, args)
+            self.write(json.dumps(result))
 
 
 class SlashCommandsInfoHandler(BaseAPIHandler):

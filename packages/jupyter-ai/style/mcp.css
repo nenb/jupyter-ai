@@ -1,0 +1,76 @@
+/* Styles for MCP components */
+
+.jp-AI-mcpResult {
+  margin: 8px 0;
+  padding: 8px;
+  border-radius: 4px;
+  background-color: var(--jp-layout-color2);
+}
+
+.jp-AI-mcpResult-text pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.jp-AI-mcpResult-image img {
+  max-width: 100%;
+  height: auto;
+}
+
+.jp-AI-mcpResult-resource {
+  border-left: 3px solid var(--jp-info-color0);
+}
+
+.jp-AI-mcpResult-resourceHeader {
+  font-weight: bold;
+  margin-bottom: 4px;
+  color: var(--jp-info-color0);
+}
+
+.jp-AI-mcpSettings {
+  padding: 16px;
+}
+
+.jp-AI-mcpServerList {
+  margin-top: 16px;
+}
+
+.jp-AI-mcpServer {
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: 4px;
+  background-color: var(--jp-layout-color2);
+}
+
+.jp-AI-mcpServer h4 {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.jp-AI-mcpServerCapabilities {
+  margin-top: 8px;
+}
+
+.jp-AI-mcpCapability {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: var(--jp-brand-color3);
+  color: var(--jp-ui-inverse-font-color0);
+  font-size: 12px;
+}
+
+.jp-AI-mcpSettingsHelp {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 4px;
+  background-color: var(--jp-layout-color2);
+}
+
+.jp-AI-mcpSettingsHelp code {
+  background-color: var(--jp-layout-color3);
+  padding: 2px 4px;
+  border-radius: 2px;
+}

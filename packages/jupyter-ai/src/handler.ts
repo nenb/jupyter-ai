@@ -2,6 +2,9 @@ import { URLExt } from '@jupyterlab/coreutils';
 
 import { ServerConnection } from '@jupyterlab/services';
 
+// MCP feature detection
+let _hasMcp: boolean | null = null;
+
 const API_NAMESPACE = 'api/ai';
 
 /**
@@ -41,6 +44,35 @@ export async function requestAPI<T>(
   }
 
   return data;
+}
+
+/**
+ * Check if MCP is available
+ * 
+ * @returns A promise that resolves to a boolean indicating if MCP is available
+ */
+export async function checkMcpAvailability(): Promise<boolean> {
+  if (_hasMcp !== null) {
+    return _hasMcp;
+  }
+  
+  try {
+    // Try to access the MCP servers endpoint
+    await requestAPI('mcp/servers');
+    _hasMcp = true;
+    return true;
+  } catch (error) {
+    // If we get a 404, MCP is not available
+    if (error instanceof ServerConnection.ResponseError && error.response.status === 404) {
+      _hasMcp = false;
+      return false;
+    }
+    
+    // For any other error, consider MCP available but with an issue
+    console.warn('Error checking MCP availability', error);
+    _hasMcp = true;
+    return true;
+  }
 }
 
 export namespace AiService {

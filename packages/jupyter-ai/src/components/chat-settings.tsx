@@ -11,18 +11,22 @@ import {
   MenuItem,
   Radio,
   RadioGroup,
+  Tab,
+  Tabs,
   TextField,
   Tooltip,
   CircularProgress
 } from '@mui/material';
 import SettingsIcon from '@mui/icons-material/Settings';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import TerminalIcon from '@mui/icons-material/Terminal';
 
 import { Select } from './select';
-import { AiService } from '../handler';
+import { AiService, checkMcpAvailability } from '../handler';
 import { ModelFields } from './settings/model-fields';
 import { ServerInfoState, useServerInfo } from './settings/use-server-info';
 import { ExistingApiKeys } from './settings/existing-api-keys';
+import { McpSettings } from './settings/mcp-settings';
 import { IRenderMimeRegistry } from '@jupyterlab/rendermime';
 import { minifyUpdate } from './settings/minify';
 import { useStackingAlert } from './mui-extras/stacking-alert';
@@ -49,6 +53,20 @@ export function ChatSettings(props: ChatSettingsProps): JSX.Element {
   // initialize alert helper
   const alert = useStackingAlert();
   const apiKeysAlert = useStackingAlert();
+  
+  // Tab state
+  const [tabValue, setTabValue] = useState(0);
+  const [hasMcp, setHasMcp] = useState<boolean | null>(null);
+  
+  // Check for MCP feature
+  useEffect(() => {
+    const checkMcp = async () => {
+      const available = await checkMcpAvailability();
+      setHasMcp(available);
+    };
+    
+    checkMcp();
+  }, []);
 
   // user inputs
   const [lmProvider, setLmProvider] =
@@ -340,6 +358,32 @@ export function ChatSettings(props: ChatSettingsProps): JSX.Element {
     );
   }
 
+  // Tab panel component
+  function TabPanel(props: {
+    children?: React.ReactNode;
+    index: number;
+    value: number;
+  }) {
+    const { children, value, index, ...other } = props;
+
+    return (
+      <div
+        role="tabpanel"
+        hidden={value !== index}
+        id={`ai-settings-tabpanel-${index}`}
+        aria-labelledby={`ai-settings-tab-${index}`}
+        {...other}
+      >
+        {value === index && children}
+      </div>
+    );
+  }
+  
+  // Handle tab change
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+  
   return (
     <Box
       sx={{
@@ -351,6 +395,31 @@ export function ChatSettings(props: ChatSettingsProps): JSX.Element {
         overflowY: 'auto'
       }}
     >
+      {/* Add tabs for AI settings and MCP if available */}
+      {hasMcp && (
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+          <Tabs
+            value={tabValue}
+            onChange={handleTabChange}
+            aria-label="AI settings tabs"
+          >
+            <Tab 
+              label="Language Models" 
+              id="ai-settings-tab-0" 
+              aria-controls="ai-settings-tabpanel-0"
+            />
+            <Tab 
+              label="MCP Servers" 
+              id="ai-settings-tab-1" 
+              aria-controls="ai-settings-tabpanel-1"
+              icon={<TerminalIcon fontSize="small" />}
+              iconPosition="start"
+            />
+          </Tabs>
+        </Box>
+      )}
+      
+      <TabPanel value={tabValue} index={0}>
       {/* Chat language model section */}
       <h2
         className="jp-ai-ChatSettings-header"
@@ -638,8 +707,15 @@ export function ChatSettings(props: ChatSettingsProps): JSX.Element {
           </FormControl>
         </>
       )}
+      </TabPanel>
+      
+      {/* MCP Settings Tab */}
+      <TabPanel value={tabValue} index={1}>
+        <McpSettings />
+      </TabPanel>
 
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+      {/* Save button and alerts - outside tab panels so they're always visible */}
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
         <Button variant="contained" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving...' : 'Save changes'}
         </Button>
