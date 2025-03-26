@@ -4,7 +4,6 @@ import time
 import types
 from functools import partial
 from typing import Dict
-import logging
 
 import traitlets
 from dask.distributed import Client as DaskClient
@@ -25,8 +24,6 @@ from .completions.handlers import DefaultInlineCompletionHandler
 from .config_manager import ConfigManager
 from .constants import BOT
 from .context_providers import BaseCommandContextProvider, FileContextProvider
-
-# Import MCP-related handlers
 from .handlers import (
     ApiKeysHandler,
     AutocompleteOptionsHandler,
@@ -37,19 +34,9 @@ from .handlers import (
     HAS_MCP,
 )
 
-# Setup logger
-logger = logging.getLogger("jupyter_ai.extension")
-
-# Import MCP-specific handlers if MCP is available
 if HAS_MCP:
-    try:
-        from .handlers import McpServersHandler, McpCommandsHandler, McpCommandArgumentsHandler, McpExecuteHandler
-        from .mcp.registry import mcp_registry
-        logger.info("MCP handlers and registry imported successfully")
-    except ImportError as e:
-        logger.error(f"Error importing MCP handlers: {e}")
-        # Set HAS_MCP to False since we couldn't load the necessary modules
-        HAS_MCP = False
+    from .handlers import McpServersHandler, McpCommandsHandler, McpCommandArgumentsHandler, McpExecuteHandler
+    from .mcp.registry import mcp_registry
 from .history import YChatHistory
 
 from jupyter_collaboration import (  # type:ignore[import-untyped]  # isort:skip
@@ -104,6 +91,15 @@ class AiExtension(ExtensionApp):
             {"path": JUPYTERNAUT_AVATAR_PATH},
         ),
     ]
+    
+    # Add MCP handlers if available
+    if HAS_MCP:
+        handlers.extend([
+            (r"api/ai/mcp/servers/?", McpServersHandler),
+            (r"api/ai/mcp/commands/?", McpCommandsHandler),
+            (r"api/ai/mcp/arguments/?", McpCommandArgumentsHandler),
+            (r"api/ai/mcp/execute/?", McpExecuteHandler),
+        ])
 
     allowed_providers = List(
         Unicode(),
@@ -252,49 +248,11 @@ class AiExtension(ExtensionApp):
             schema_id=JUPYTER_COLLABORATION_EVENTS_URI, listener=self.connect_chat
         )
         
-        # Register MCP handlers if available
+        # Initialize MCP registry if available
         if HAS_MCP:
-            self.log.info("Registering MCP API handlers")
-            try:
-                # Add MCP-specific routes
-                mcp_handlers = [
-                    (r"api/ai/mcp/servers/?", McpServersHandler),
-                    (r"api/ai/mcp/commands/?", McpCommandsHandler),
-                    (r"api/ai/mcp/arguments/?", McpCommandArgumentsHandler),
-                    (r"api/ai/mcp/execute/?", McpExecuteHandler),
-                ]
-                
-                # Register the handlers with the webapp
-                # The handlers array in this class doesn't directly affect the web app routes,
-                # we need to register them explicitly
-                self.log.info("Base URL: " + self.serverapp.web_app.settings.get("base_url", "/"))
-                
-                for handler_pattern, handler_class in mcp_handlers:
-                    pattern = self.serverapp.web_app.settings.get("base_url", "/") + handler_pattern
-                    self.log.info(f"Registering MCP handler: {pattern} -> {handler_class.__name__}")
-                    
-                    # Add the handler directly to the application's handlers
-                    self.handlers.append((handler_pattern, handler_class))
-                    
-                    # Also register with the web app for existing sessions
-                    self.serverapp.web_app.add_handlers(".*$", [(pattern, handler_class)])
-                self.log.info("MCP API handlers registered successfully")
-            except Exception as e:
-                self.log.error(f"Error registering MCP API handlers: {e}")
-                
-            # Initialize MCP registry
             self.log.info("Initializing MCP registry")
             # We cannot await directly here, so schedule it as a task
-            async def init_mcp_with_error_handling():
-                try:
-                    await mcp_registry.initialize()
-                    self.log.info("MCP registry initialization completed successfully")
-                except Exception as e:
-                    self.log.error(f"Error during MCP registry initialization: {e}")
-                    # Don't re-raise the exception to allow the server to continue
-            
-            # Schedule the initialization task with error handling
-            self.serverapp.io_loop.asyncio_loop.create_task(init_mcp_with_error_handling())
+            self.serverapp.io_loop.asyncio_loop.create_task(mcp_registry.initialize())
 
     async def connect_chat(
         self, logger: EventLogger, schema_id: str, data: dict
@@ -640,36 +598,18 @@ class AiExtension(ExtensionApp):
             
         # Add MCP server chat handlers if available
         if HAS_MCP:
-            try:
-                from .mcp.chat_handler import McpChatHandler, McpServerChatHandler
-                from .mcp.registry import mcp_registry
+            from .mcp.chat_handler import McpServerChatHandler
+            
+            # Register default MCP handler (for direct server access)
+            mcp_server_handler = McpServerChatHandler(**chat_handler_kwargs)
+            chat_handlers["mcp_server"] = mcp_server_handler
+            
+            # Initialize MCP registry for server discovery
+            if not mcp_registry._initialized:
+                self.serverapp.io_loop.asyncio_loop.create_task(mcp_registry.initialize())
                 
-                # Register MCP handlers
-                self.log.info("Registering MCP chat handlers")
-                
-                # Register main MCP handler (for /mcp commands)
-                mcp_handler = McpChatHandler(**chat_handler_kwargs)
-                chat_handlers["/mcp"] = mcp_handler
-                self.log.info("Registered MCP chat handler for /mcp commands")
-                
-                # Register default MCP handler (for direct server access)
-                mcp_server_handler = McpServerChatHandler(**chat_handler_kwargs)
-                chat_handlers["mcp_server"] = mcp_server_handler
-                self.log.info("Registered MCP server handler for dynamic routing")
-                
-                # Initialize MCP registry for server discovery
-                if not mcp_registry._initialized:
-                    async def init_mcp_for_chat_handler():
-                        try:
-                            await mcp_registry.initialize()
-                            self.log.info("MCP registry initialized for chat handlers")
-                        except Exception as e:
-                            self.log.error(f"Error initializing MCP registry for chat handlers: {e}")
-                            
-                    # Schedule the initialization task with error handling
-                    self.serverapp.io_loop.asyncio_loop.create_task(init_mcp_for_chat_handler())
-            except Exception as e:
-                self.log.error(f"Error registering MCP chat handlers: {e}")
+            # We will dynamically route server commands to this handler
+            self.log.info("Registered MCP server handler for dynamic routing")
 
         return chat_handlers
 

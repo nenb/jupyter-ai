@@ -7,9 +7,9 @@ logger = logging.getLogger("jupyter_ai")
 
 # Check for MCP support
 try:
-    from mcp import __version__ as mcp_version
+    import mcp
     HAS_MCP = True
-    logger.info(f"MCP SDK found. Version: {mcp_version}")
+    logger.info(f"MCP SDK found.")
 except ImportError:
     HAS_MCP = False
     logger.warning("MCP SDK not found. MCP functionality will be disabled.")
