@@ -25,7 +25,6 @@ from jupyter_ai.chat_handlers import (
 
 if HAS_MCP:
     try:
-        from jupyter_ai.mcp.chat_handler import McpChatHandler, McpServerChatHandler
         from jupyter_ai.mcp.registry import mcp_registry
         logger.info("MCP chat handlers and registry imported successfully")
     except ImportError as e:
@@ -49,8 +48,6 @@ from .models import (
     ListSlashCommandsResponse,
     UpdateConfigRequest,
 )
-
-from tornado.web import url as url_path_join
 
 if TYPE_CHECKING:
     from jupyter_ai_magics.embedding_providers import BaseEmbeddingsProvider

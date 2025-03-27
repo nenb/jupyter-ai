@@ -336,6 +336,7 @@ class AiExtension(ExtensionApp):
         default = chat_handlers["default"]
         # Split on any whitespace, either spaces or newlines
         maybe_command = message.body.split(None, 1)[0]
+        self.log.warning(f"WARN {maybe_command} {chat_handlers.keys()}")
         is_command = (
             message.body.startswith("/")
             and maybe_command in chat_handlers.keys()
@@ -362,10 +363,16 @@ class AiExtension(ExtensionApp):
             if is_mcp_command:
                 # Get the MCP server handler
                 mcp_handler = None
-                for handler in chat_handlers.values():
-                    if isinstance(handler, McpServerChatHandler):
-                        mcp_handler = handler
-                        break
+                
+                # Import here to avoid circular imports
+                if HAS_MCP:
+                    from .mcp.chat_handler import McpChatHandler
+                    
+                    # Find the MCP server handler
+                    for handler in chat_handlers.values():
+                        if isinstance(handler, McpChatHandler):
+                            mcp_handler = handler
+                            break
                 
                 if mcp_handler:
                     await mcp_handler.on_message(message)
@@ -598,10 +605,10 @@ class AiExtension(ExtensionApp):
             
         # Add MCP server chat handlers if available
         if HAS_MCP:
-            from .mcp.chat_handler import McpServerChatHandler
+            from .mcp.chat_handler import McpChatHandler
             
             # Register default MCP handler (for direct server access)
-            mcp_server_handler = McpServerChatHandler(**chat_handler_kwargs)
+            mcp_server_handler = McpChatHandler(**chat_handler_kwargs)
             chat_handlers["mcp_server"] = mcp_server_handler
             
             # Initialize MCP registry for server discovery

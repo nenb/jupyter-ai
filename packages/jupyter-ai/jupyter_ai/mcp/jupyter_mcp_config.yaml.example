@@ -1,0 +1,13 @@
+# Example MCP Configuration for Jupyter-AI
+# Copy this file to ~/.jupyter/jupyter_mcp_config.yaml to use it
+
+mcp:
+  servers:
+    # Example of a stdio-based MCP server with environment variables
+    DemoServer:
+      command: "/Users/nenb/miniforge3/envs/jupyter-ai/bin/python"
+      args: ["playground/server.py"]
+      env:
+        OPENAI_API_KEY: ""
+      description: "DemoServer"
+      connection_type: "stdio"
