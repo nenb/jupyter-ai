@@ -12,12 +12,26 @@ import {
   IInputModel,
   ChatCommand
 } from '@jupyter/chat';
+import { ServerConnection } from '@jupyterlab/services';
+import { URLExt } from '@jupyterlab/coreutils';
+import { terminalIcon } from '@jupyterlab/ui-components';
+
+interface ListOptionsEntry {
+  id: string;
+  label: string;
+  description: string;
+  only_start: boolean;
+}
+
+interface ListOptionsResponse {
+  options: ListOptionsEntry[];
+}
 
 const CONTEXT_COMMANDS_PROVIDER_ID =
   '@jupyter-ai/core:context-commands-provider';
 
 /**
- * A command provider that provides completions for context commands like `@file`.
+ * A command provider that provides completions for context commands like `@file` and `@mcp`.
  */
 export class ContextCommandsProvider implements IChatCommandProvider {
   public id: string = CONTEXT_COMMANDS_PROVIDER_ID;
@@ -30,6 +44,12 @@ export class ContextCommandsProvider implements IChatCommandProvider {
       providerId: this.id,
       replaceWith: '@file:',
       description: 'Include a file with your prompt'
+    },
+    {
+      name: '@mcp',
+      providerId: this.id,
+      replaceWith: '@mcp:',
+      description: 'Include content from an MCP server resource with your prompt'
     }
   ];
 
@@ -39,23 +59,32 @@ export class ContextCommandsProvider implements IChatCommandProvider {
   ) {
     this._contentsManager = contentsManager;
     this._docRegistry = docRegistry;
+    this._serverSettings = ServerConnection.makeSettings();
   }
 
   async getChatCommands(inputModel: IInputModel) {
     // do nothing if the current word does not start with '@'.
     const currentWord = inputModel.currentWord;
+    
     if (!currentWord || !currentWord.startsWith('@')) {
       return [];
     }
 
-    // if the current word starts with `@file:`, return a list of valid file
-    // paths.
+
     if (currentWord.startsWith('@file:')) {
       const searchPath = currentWord.split('@file:')[1];
       const commands = await getPathCompletions(
         this._contentsManager,
         this._docRegistry,
         searchPath
+      );
+      return commands;
+    }
+
+    if (currentWord.startsWith('@mcp:')) {
+      const commands = await getMcpCompletions(
+        this._serverSettings,
+        currentWord
       );
       return commands;
     }
@@ -78,6 +107,7 @@ export class ContextCommandsProvider implements IChatCommandProvider {
 
   private _contentsManager: Contents.IManager;
   private _docRegistry: DocumentRegistry;
+  private _serverSettings: ServerConnection.ISettings;
 }
 
 /**
@@ -103,6 +133,67 @@ function getParentAndBase(path: string): [string, string] {
   }
 
   return [parentPath, basename];
+}
+
+/**
+ * Fetches MCP completion options from the server based on the current input.
+ * 
+ * @param serverSettings The server connection settings
+ * @param currentWord The current word being typed (starting with @mcp:)
+ * @returns A list of ChatCommand objects to display as completion options
+ */
+async function getMcpCompletions(
+  serverSettings: ServerConnection.ISettings,
+  currentWord: string
+): Promise<ChatCommand[]> {
+  const commands: ChatCommand[] = [];
+  const mcpArgs = currentWord.split('@mcp:')[1];
+
+  try {
+    const settings = ServerConnection.makeSettings();
+    const requestUrl = URLExt.join(
+      settings.baseUrl,
+      'api/ai/chats/autocomplete_options'
+    );
+    
+    const fullUrl = `${requestUrl}?partialCommand=${encodeURIComponent(currentWord)}`;
+    
+    const response = await ServerConnection.makeRequest(
+      fullUrl,
+      {},
+      settings
+    );
+    
+    if (!response.ok) {
+      console.error(`Error fetching MCP completions: ${response.statusText}`);
+      return [];
+    }
+
+    const data = await response.json() as ListOptionsResponse;
+    
+    for (const option of data.options) {
+      const replaceText = option.label;
+      
+      const isServer = !mcpArgs.includes(':');
+      const description = isServer 
+        ? `${option.description}`
+        : `${option.description}`;
+        
+      const command: ChatCommand = {
+        name: option.id,
+        providerId: CONTEXT_COMMANDS_PROVIDER_ID,
+        description: description,
+        ...(isServer && { icon: terminalIcon }),
+        replaceWith: `@mcp:${replaceText}`
+      };
+      
+      commands.push(command);
+    }
+  } catch (error) {
+    console.error('Error fetching MCP completions:', error);
+  }
+
+  return commands;
 }
 
 async function getPathCompletions(

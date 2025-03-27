@@ -5,3 +5,4 @@ from .base import (
     find_commands,
 )
 from .file import FileContextProvider
+from .mcp import McpContextProvider

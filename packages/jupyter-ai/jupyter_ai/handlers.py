@@ -269,7 +269,7 @@ class AutocompleteOptionsHandler(BaseAPIHandler):
         return CHAT_HANDLER_DICT
 
     @web.authenticated
-    def get(self):
+    async def get(self):
         response = ListOptionsResponse()
 
         # if no selected LLM, return an empty response
@@ -295,7 +295,7 @@ class AutocompleteOptionsHandler(BaseAPIHandler):
                 and context_provider
                 and isinstance(context_provider, BaseCommandContextProvider)
             ):
-                response.options = context_provider.get_arg_options(cmd.arg)
+                response.options = await context_provider.get_arg_options(cmd.arg)
         else:
             response.options = (
                 self._get_slash_command_options() + self._get_context_provider_options()

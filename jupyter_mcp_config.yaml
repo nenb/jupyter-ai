@@ -1,0 +1,13 @@
+mcp:
+  servers:
+    DemoServer:
+      command: "/Users/nenb/miniforge3/envs/jupyter-ai/bin/python"
+      args: ["playground/server.py"]
+      description: "Demo MCP Server"
+      transport: "stdio"
+
+    Fetch:
+      command: "uvx"
+      args: ["mcp-server-fetch"]
+      description: "MCP Server for Fetch"
+      transport: "stdio"

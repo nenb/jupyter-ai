@@ -28,7 +28,7 @@ class FileContextProvider(BaseCommandContextProvider):
     requires_arg = True
     header = "Following are contents of files referenced:"
 
-    def get_arg_options(self, arg_prefix: str) -> List[ListOptionsEntry]:
+    async def get_arg_options(self, arg_prefix: str) -> List[ListOptionsEntry]:
         is_abs = not os.path.isabs(arg_prefix)
         path_prefix = arg_prefix if is_abs else os.path.join(self.base_dir, arg_prefix)
         path_prefix = path_prefix

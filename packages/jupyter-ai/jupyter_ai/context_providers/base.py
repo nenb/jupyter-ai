@@ -166,7 +166,7 @@ class BaseCommandContextProvider(_BaseContextProvider):
 
         return re.sub(self.pattern, replace, prompt)
 
-    def get_arg_options(self, arg_prefix: str) -> List[ListOptionsEntry]:
+    async def get_arg_options(self, arg_prefix: str) -> List[ListOptionsEntry]:
         """Returns a list of autocomplete options for arguments to the command
         based on the prefix.
         Only triggered if ':' is present after the command id (e.g. '@file:').

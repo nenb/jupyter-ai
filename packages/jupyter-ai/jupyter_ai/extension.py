@@ -23,7 +23,7 @@ from .chat_handlers.base import BaseChatHandler
 from .completions.handlers import DefaultInlineCompletionHandler
 from .config_manager import ConfigManager
 from .constants import BOT
-from .context_providers import BaseCommandContextProvider, FileContextProvider
+from .context_providers import BaseCommandContextProvider, FileContextProvider, McpContextProvider
 from .handlers import (
     ApiKeysHandler,
     AutocompleteOptionsHandler,
@@ -558,6 +558,7 @@ class AiExtension(ExtensionApp):
         }
         context_providers_clses = [
             FileContextProvider,
+            McpContextProvider,
         ]
         for context_provider_ep in context_providers_eps:
             try:
