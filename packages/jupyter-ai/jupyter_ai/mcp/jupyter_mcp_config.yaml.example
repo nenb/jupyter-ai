@@ -1,0 +1,30 @@
+# Example MCP Configuration for Jupyter-AI
+# Copy this file to ~/.jupyter/jupyter_mcp_config.yaml to use it
+
+mcp:
+  servers:
+    # Example of a stdio-based MCP server with environment variables
+    DemoServer:
+      command: "python"
+      args: ["path/to/your/server.py"]
+      env:
+        OPENAI_API_KEY: ""
+      description: "Demo MCP Server"
+      connection_type: "stdio"
+      
+    # Example of an SSE-based MCP server
+    RemoteServer:
+      connection_type: "sse"
+      endpoint: "https://example.com/mcp"
+      description: "Remote MCP Server"
+
+# Usage Example:
+# 
+# To use an MCP resource as context in a Jupyter-AI chat:
+#
+# 1. Configure your MCP servers above
+# 2. Use the @mcp context provider in your prompt:
+#    "@mcp:DemoServer:resource_name"
+#
+# This will fetch the content of the resource named "resource_name" 
+# from the "DemoServer" MCP server and include it as context for your LLM prompt.

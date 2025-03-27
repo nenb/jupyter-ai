@@ -1,0 +1,35 @@
+/**
+ * MCP styling for Jupyter-AI
+ */
+
+.jp-AI-mcpResult {
+  margin-top: 8px;
+  margin-bottom: 8px;
+  max-width: 100%;
+}
+
+.jp-AI-mcpServer {
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 4px;
+}
+
+.jp-AI-mcpServerList {
+  padding-left: 0;
+}
+
+.jp-AI-mcpServerCapabilities {
+  margin-top: 8px;
+}
+
+.jp-AI-mcpCapability {
+  margin-right: 8px;
+}
+
+.jp-AI-mcpSettingsHelp {
+  margin-top: 16px;
+  padding: 8px;
+  background-color: var(--jp-layout-color1);
+  border-radius: 4px;
+}
