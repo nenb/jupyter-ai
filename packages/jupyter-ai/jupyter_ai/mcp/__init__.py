@@ -1,4 +1,4 @@
 # MCP (Model Context Protocol) integration for Jupyter-AI
-from .registry import mcp_registry
+from .registry import MCPServerRegistry
 
-__all__ = ["mcp_registry"]
+__all__ = ["MCPServerRegistry"]

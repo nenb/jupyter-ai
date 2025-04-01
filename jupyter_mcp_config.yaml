@@ -10,21 +10,10 @@ mcp:
       env:
         OPENAI_API_KEY: ""
       description: "Demo MCP Server"
-      connection_type: "stdio"
+      transport: "stdio"
       
     # Example of an SSE-based MCP server
     # RemoteServer:
-    #   connection_type: "sse"
+    #   transport: "sse"
     #   endpoint: "https://example.com/mcp"
     #   description: "Remote MCP Server"
-
-# Usage Example:
-# 
-# To use an MCP resource as context in a Jupyter-AI chat:
-#
-# 1. Configure your MCP servers above
-# 2. Use the @mcp context provider in your prompt:
-#    "@mcp:DemoServer:resource_name"
-#
-# This will fetch the content of the resource named "resource_name" 
-# from the "DemoServer" MCP server and include it as context for your LLM prompt.
